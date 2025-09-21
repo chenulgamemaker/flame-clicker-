@@ -1,0 +1,249 @@
+# flamebound_clicker_full_features.py
+
+import time
+import threading
+import json
+import os
+import random
+import sys
+
+try:
+    import winsound  # Windows-only sound
+except ImportError:
+    winsound = None
+
+# === ANSI Colors for terminal styling ===
+class Colors:
+    RED = '\033[91m'
+    ORANGE = '\033[38;5;208m'
+    YELLOW = '\033[93m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    CYAN = '\033[96m'
+    MAGENTA = '\033[95m'
+
+def color_text(text, color):
+    return f"{color}{text}{Colors.RESET}"
+
+def fire_icon():
+    return color_text("🔥", Colors.ORANGE)
+
+def print_border():
+    print(color_text("=" * 50, Colors.RED))
+
+# === Flame denominations and names ===
+FLAME_NAMES = [
+    "Ember", "Spark", "Flicker", "Flame", "Blaze", "Torch", "Kindle", "Scorch",
+    "Igniter", "Flashfire", "Flare", "Wildflame", "Bonfire", "Heatwave", "Inferno",
+    "Cinderstorm", "Firebreak", "Combustion", "Pyro", "Pyroburst", "Burnstorm",
+    "Magmaburst", "Firewhirl", "Hellfire", "Blaze Titan", "Superflare", "Ashwalker",
+    "Volcano", "Volcanic Core", "Lava Surge", "Solar Flare", "Flame King",
+    "Firestorm Titan", "Eruption Prime", "Planetburn", "Ember God", "Starfire",
+    "Infernal Nova", "Solar Wrath", "Pyro Dominion", "Cosmic Flame", "Infernum",
+    "Blazing Realm", "Molten Throne", "Ashen Deity", "Fire Colossus", "Nova Emperor",
+    "Flame Eternus", "Blazeworld", "Final Burn", "Emberverse", "Starcore",
+    "Infernal Eye", "Pyroclasm", "Ignis Eternal", "Supernova Wraith", "Eternal Burn",
+    "Flame Absolute", "Primordial Fire", "Phoenix Soul", "Fire Nexus", "Final Flame",
+    "Omega Pyre", "Sextinity"
+]
+
+def generate_denominations(max_val=10**21):
+    denominations = [1]
+    multipliers = [2, 2.5]
+    i = 0
+    while True:
+        next_val = int(denominations[-1] * multipliers[i % 2])
+        if next_val > max_val:
+            break
+        denominations.append(next_val)
+        i += 1
+    return denominations
+
+def assign_flame_names(denoms):
+    names = []
+    for i in range(len(denoms)):
+        if i < len(FLAME_NAMES):
+            names.append(FLAME_NAMES[i])
+        else:
+            names.append("Sextinity")
+    return names
+
+# === Sound helper ===
+def play_sound(frequency=1000, duration=100):
+    if winsound:
+        winsound.Beep(frequency, duration)
+    else:
+        # On other OS, no sound or could implement with external libs
+        pass
+
+# === Animate fire burst ===
+def animate_fire_burst():
+    bursts = ['.', '..', '...']
+    for b in bursts:
+        print(f"{fire_icon()} Burning up{b}", end='\r')
+        time.sleep(0.2)
+    print(' ' * 20, end='\r')
+
+# === Auto-clicker class ===
+class FireSpirit:
+    def __init__(self, name, base_cost, fps_per_sec):
+        self.name = name
+        self.base_cost = base_cost
+        self.fps_per_sec = fps_per_sec
+        self.amount = 0
+
+    def cost(self):
+        # Cost grows exponentially per purchased spirit
+        return int(self.base_cost * (1.15 ** self.amount))
+
+# === Flamebound Clicker Game ===
+class FlameboundClicker:
+    SAVE_FILE = "flamebound_save.json"
+
+    def __init__(self):
+        self.denominations = generate_denominations()
+        self.names = assign_flame_names(self.denominations)
+        self.flame_points = 0
+        self.tier_index = 0
+        self.fp_per_click = 1
+        self.burn_cycles = 0
+        self.ashes = 0
+
+        # Auto-clickers: Fire Spirits
+        self.fire_spirits = [
+            FireSpirit("Ember Spirit", base_cost=100, fps_per_sec=1),
+            FireSpirit("Spark Spirit", base_cost=1000, fps_per_sec=10),
+            FireSpirit("Flame Wraith", base_cost=10_000, fps_per_sec=100),
+            FireSpirit("Inferno Elemental", base_cost=100_000, fps_per_sec=1000),
+        ]
+
+        # Ashes upgrades
+        self.ashes_upgrades = {
+            "click_bonus": 0,  # % increase FP per click
+            "auto_bonus": 0,   # % increase auto-click FP/s
+        }
+
+        self.auto_running = True
+        self.load_game()
+        self.start_auto_clickers()
+        self.flame_event_active = False
+
+    # === Core mechanics ===
+
+    def click(self):
+        bonus = 1 + self.ashes_upgrades["click_bonus"] / 100
+        gained = int(self.fp_per_click * bonus)
+        self.flame_points += gained
+        animate_fire_burst()
+        play_sound(1200, 100)
+        print(f"{fire_icon()} {color_text('Generated', Colors.YELLOW)} {color_text(f'{gained:,}', Colors.ORANGE)} Flame Points! {color_text('Total:', Colors.YELLOW)} {color_text(f'{self.flame_points:,}', Colors.RED)}")
+
+    def upgrade(self):
+        if self.tier_index >= len(self.denominations) - 1:
+            print(color_text("🔥 You have reached the maximum flame tier! 🔥", Colors.RED))
+            return
+
+        cost = self.denominations[self.tier_index + 1] * 10
+        if self.flame_points >= cost:
+            self.flame_points -= cost
+            self.tier_index += 1
+            self.fp_per_click = self.denominations[self.tier_index]
+            print_border()
+            print(color_text(f"🔥 Upgraded to tier {self.tier_index + 1}: {self.names[self.tier_index]}! 🔥", Colors.ORANGE))
+            print(color_text(f"Flame Points per click is now {self.fp_per_click:,}", Colors.YELLOW))
+            print_border()
+            play_sound(1500, 150)
+        else:
+            print(color_text(f"Not enough Flame Points to upgrade. You need {cost:,}.", Colors.RED))
+
+    def prestige(self):
+        if self.flame_points < 1_000_000:
+            print(color_text("You need at least 1,000,000 Flame Points to perform a Burn Cycle (prestige).", Colors.RED))
+            return
+        ashes_gained = self.flame_points // 1_000_000
+        self.ashes += ashes_gained
+        self.burn_cycles += 1
+        print_border()
+        print(color_text(f"🔥 Burn Cycle activated! You gained {ashes_gained:,} Ashes! 🔥", Colors.MAGENTA))
+        print_border()
+        play_sound(1800, 300)
+        self.flame_points = 0
+        self.tier_index = 0
+        self.fp_per_click = 1
+        # Reset fire spirits
+        for spirit in self.fire_spirits:
+            spirit.amount = 0
+
+    # === Auto-clicker thread ===
+
+    def auto_clicker_loop(self):
+        while self.auto_running:
+            total_fps = 0
+            for spirit in self.fire_spirits:
+                bonus = 1 + self.ashes_upgrades["auto_bonus"] / 100
+                total_fps += spirit.fps_per_sec * spirit.amount * bonus
+
+            gained = int(total_fps)
+            if gained > 0:
+                self.flame_points += gained
+                # Minimal animation and no sound for auto
+            time.sleep(1)
+
+    def start_auto_clickers(self):
+        t = threading.Thread(target=self.auto_clicker_loop, daemon=True)
+        t.start()
+
+    # === Buy Fire Spirits ===
+    def buy_fire_spirit(self, index):
+        if index < 0 or index >= len(self.fire_spirits):
+            print(color_text("Invalid Fire Spirit choice.", Colors.RED))
+            return
+
+        spirit = self.fire_spirits[index]
+        cost = spirit.cost()
+        if self.flame_points >= cost:
+            self.flame_points -= cost
+            spirit.amount += 1
+            print(color_text(f"Bought 1 {spirit.name}! You now have {spirit.amount}.", Colors.YELLOW))
+            play_sound(1400, 100)
+        else:
+            print(color_text(f"Not enough Flame Points to buy {spirit.name}. You need {cost:,}.", Colors.RED))
+
+    # === Ashes shop for upgrades ===
+    def ashes_shop(self):
+        print_border()
+        print(color_text("🔥 Ashes Shop 🔥", Colors.MAGENTA))
+        print(f"Your Ashes: {self.ashes:,}")
+        print("1) Increase Click Power by 5% (Cost: 5 Ashes)")
+        print("2) Increase Auto-Click Power by 5% (Cost: 5 Ashes)")
+        print("3) Exit Shop")
+        print_border()
+
+        choice = input(color_text("Choose upgrade (1-3): ", Colors.CYAN))
+        if choice == "1":
+            if self.ashes >= 5:
+                self.ashes -= 5
+                self.ashes_upgrades["click_bonus"] += 5
+                print(color_text("Click Power increased by 5%!", Colors.MAGENTA))
+                play_sound(1600, 150)
+            else:
+                print(color_text("Not enough Ashes.", Colors.RED))
+        elif choice == "2":
+            if self.ashes >= 5:
+                self.ashes -= 5
+                self.ashes_upgrades["auto_bonus"] += 5
+                print(color_text("Auto-Click Power increased by 5%!", Colors.MAGENTA))
+                play_sound(1600, 150)
+            else:
+                print(color_text("Not enough Ashes.", Colors.RED))
+        elif choice == "3":
+            print("Exiting Ashes Shop.")
+        else:
+            print(color_text("Invalid input.", Colors.RED))
+
+    # === Random Flame Events (temporary FP boosts) ===
+    def flame_event(self):
+        if self.flame_event_active:
+            return  # Only one event at a time
+
+        self.flame
