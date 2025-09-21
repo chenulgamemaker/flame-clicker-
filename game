@@ -246,4 +246,113 @@ class FlameboundClicker:
         if self.flame_event_active:
             return  # Only one event at a time
 
-        self.flame
+        self.flame_event_active = True
+        boost = random.randint(2, 5)
+        duration = random.randint(5, 15)  # seconds
+
+        print_border()
+        print(color_text(f"🔥 Flame Event! FP per click boosted x{boost} for {duration} seconds! 🔥", Colors.YELLOW))
+        print_border()
+
+        original_fp_per_click = self.fp_per_click
+        self.fp_per_click *= boost
+
+        def end_event():
+            time.sleep(duration)
+            self.fp_per_click = original_fp_per_click
+            self.flame_event_active = False
+            print(color_text("🔥 Flame Event ended! FP per click back to normal.", Colors.RED))
+
+        threading.Thread(target=end_event, daemon=True).start()
+
+    # === Save and Load ===
+    def save_game(self):
+        data = {
+            "flame_points": self.flame_points,
+            "tier_index": self.tier_index,
+            "fp_per_click": self.fp_per_click,
+            "burn_cycles": self.burn_cycles,
+            "ashes": self.ashes,
+            "fire_spirits": [(fs.amount) for fs in self.fire_spirits],
+            "ashes_upgrades": self.ashes_upgrades,
+        }
+        with open(self.SAVE_FILE, "w") as f:
+            json.dump(data, f)
+        print(color_text("Game saved.", Colors.CYAN))
+
+    def load_game(self):
+        if not os.path.exists(self.SAVE_FILE):
+            return
+        with open(self.SAVE_FILE, "r") as f:
+            data = json.load(f)
+        self.flame_points = data.get("flame_points", 0)
+        self.tier_index = data.get("tier_index", 0)
+        self.fp_per_click = data.get("fp_per_click", 1)
+        self.burn_cycles = data.get("burn_cycles", 0)
+        self.ashes = data.get("ashes", 0)
+        fs_amounts = data.get("fire_spirits", [])
+        for i, amt in enumerate(fs_amounts):
+            if i < len(self.fire_spirits):
+                self.fire_spirits[i].amount = amt
+        self.ashes_upgrades = data.get("ashes_upgrades", {"click_bonus":0, "auto_bonus":0})
+        print(color_text("Game loaded.", Colors.CYAN))
+
+    # === Display status ===
+    def show_status(self):
+        tier_name = self.names[self.tier_index]
+        tier_val = self.denominations[self.tier_index]
+        print_border()
+        print(color_text("🔥 Flamebound Clicker Status 🔥", Colors.RED))
+        print(color_text(f"Flame Points: {self.flame_points:,}", Colors.YELLOW))
+        print(color_text(f"Flame Tier [{self.tier_index + 1}/{len(self.denominations)}]: {tier_name} ({tier_val:,} FP/click)", Colors.ORANGE))
+        print(color_text(f"Burn Cycles: {self.burn_cycles}", Colors.CYAN))
+        print(color_text(f"Ashes: {self.ashes:,}", Colors.MAGENTA))
+        print(color_text(f"Click Power Bonus: {self.ashes_upgrades['click_bonus']}%", Colors.MAGENTA))
+        print(color_text(f"Auto-Click Power Bonus: {self.ashes_upgrades['auto_bonus']}%", Colors.MAGENTA))
+        print_border()
+        print(color_text("Fire Spirits (Auto-Clickers):", Colors.YELLOW))
+        for i, spirit in enumerate(self.fire_spirits):
+            print(f"{i+1}) {spirit.name}: {spirit.amount} owned, Cost: {spirit.cost():,} FP, Generates {spirit.fps_per_sec} FP/sec each")
+        print_border()
+
+    # === Main game loop ===
+    def run(self):
+        print(color_text("🔥 Welcome to Flamebound Clicker: The Rise of Sextinity! 🔥", Colors.RED))
+        print(color_text("Press Enter to generate Flame Points", Colors.YELLOW))
+        print(color_text("'u' to upgrade flame tier, 'b' to buy Fire Spirit, 's' for Ashes Shop,", Colors.YELLOW))
+        print(color_text("'e' to trigger Flame Event, 'p' for Burn Cycle (prestige), 'save' to save, 'q' to quit.", Colors.YELLOW))
+
+        while True:
+            self.show_status()
+            choice = input(color_text("Action (Enter/u/b/s/e/p/save/q): ", Colors.CYAN)).lower()
+
+            if choice == "":
+                self.click()
+            elif choice == "u":
+                self.upgrade()
+            elif choice == "b":
+                try:
+                    idx = int(input(color_text("Choose Fire Spirit number to buy: ", Colors.CYAN))) - 1
+                    self.buy_fire_spirit(idx)
+                except ValueError:
+                    print(color_text("Invalid input.", Colors.RED))
+            elif choice == "s":
+                self.ashes_shop()
+            elif choice == "e":
+                self.flame_event()
+            elif choice == "p":
+                self.prestige()
+            elif choice == "save":
+                self.save_game()
+            elif choice == "q":
+                self.save_game()
+                self.auto_running = False
+                print(color_text("Thanks for playing Flamebound Clicker! 🔥", Colors.RED))
+                break
+            else:
+                print(color_text("Invalid input.", Colors.RED))
+
+if __name__ == "__main__":
+    game = FlameboundClicker()
+    game.run()
+
